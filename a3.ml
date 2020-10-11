@@ -611,6 +611,25 @@
  ;;
  
  (*******************************************************************
+     Custom library
+  *******************************************************************)
+ 
+ let rec append_list l1 l2 = 
+  match l1 with
+   | [] -> l2
+   | h :: t -> h :: (append_list t l2);;
+
+ let rec item_in_list x l =
+  match l with
+   | [] -> false
+   | h :: t -> if (h = x) then true else (item_in_list x t);;
+  
+  let rec check_unused_variable declared_vs used_vs : string =
+   match declared_vs with
+    | [] -> ""
+    | h :: t -> if ((item_in_list h used_vs) = false) then "Unused variable " ^ h ^ "\n" ^ (check_unused_variable t used_vs) else (check_unused_variable t used_vs);;
+
+ (*******************************************************************
      Translator
   *******************************************************************)
  
@@ -640,47 +659,62 @@ void putreal(double n) {
 
 ";;
    
- let rec translate (ast:ast_sl) : string * string = 
-  "", prologue ^ "int main() {\n" ^ (translate_sl ast) ^ "return 0;\n}\n"
+ let rec translate (ast:ast_sl) : string * string =
+  let (err, prog, declared_vs, used_vs) = (translate_sl ast [] []) in
+  err ^ (check_unused_variable declared_vs used_vs), prologue ^ "int main() {\n" ^ prog ^ "return 0;\n}\n"
  
- and translate_sl (ast:ast_sl) : string =
+ and translate_sl (ast:ast_sl) declared_vs used_vs : string * string * list * list =
   match ast with
-   | [] -> ""
-   | s :: sl -> translate_s s ^ translate_sl sl
+   | [] -> "", "", [], []
+   | s :: sl -> let (err1, prog1, declared_vs1, used_vs1) = (translate_s s declared_vs used_vs) in 
+      let (err2, prog2, declared_vs2, used_vs2) = (translate_sl sl declared_vs1 used_vs1) in
+        err1 ^ err2, prog1 ^ prog2, declared_vs2, used_vs2
  
- and translate_s (s:ast_s) : string =
+ and translate_s (s:ast_s) declared_vs used_vs : string * string * list * list =
   match s with
-   | AST_assign(id, expr) -> translate_assign id expr
-   | AST_read(id) -> translate_read id
-   | AST_write(expr) -> translate_write expr
-   | AST_if (cond, sl) -> translate_if cond sl
-   | AST_while (cond, sl) -> translate_while cond sl
+   | AST_assign(id, expr) -> let (err1, prog1, declared_vs1, used_vs1) = (translate_assign id expr declared_vs used_vs) in 
+      if ((item_in_list id declared_vs) = false) then err1, "double " ^ id ^ ";\n" ^ prog1, id :: declared_vs1, used_vs1 else err1, prog1, declared_vs1, used_vs1
+   | AST_read(id) -> let (err1, prog1, declared_vs1, used_vs1) = (translate_read id declared_vs used_vs) in 
+      if ((item_in_list id declared_vs) = false) then err1, "double " ^ id ^ ";\n" ^ prog1, id :: declared_vs1, used_vs1 else err1, prog1, declared_vs1, used_vs1
+   | AST_write(expr) -> translate_write expr declared_vs used_vs
+   | AST_if (cond, sl) -> translate_if cond sl declared_vs used_vs
+   | AST_while (cond, sl) -> translate_while cond sl declared_vs used_vs
    | AST_error -> raise (Failure "How can I get this error????")
  
- and translate_assign (id:string) (expr:ast_e) : string =
-  id ^ " = " ^ (translate_expr expr) ^ ";\n"
+ and translate_assign (id:string) (expr:ast_e) declared_vs used_vs : string * string * list * list =
+  let (err1, prog1, declared_vs1, used_vs1) = (translate_expr expr declared_vs used_vs) in
+    err1, id ^ " = " ^ prog1 ^ ";\n", declared_vs1, used_vs1
  
- and translate_read (id:string) : string =
-  id ^ " = getreal();\n"
+ and translate_read (id:string) declared_vs used_vs : string * string * list * list =
+  "", id ^ " = getreal();\n", declared_vs, used_vs
  
- and translate_write (expr:ast_e) : string =
-  "putreal(" ^ (translate_expr expr) ^ ");\n"
+ and translate_write (expr:ast_e) declared_vs used_vs : string * string * list * list =
+  let (err1, prog1, declared_vs1, used_vs1) = (translate_expr expr declared_vs used_vs) in
+    err1, "putreal(" ^ prog1 ^ ");\n", declared_vs1, used_vs1
  
- and translate_if (cond:ast_c) (sl:ast_sl) : string =
-  "if (" ^ (translate_cond cond) ^ ") {\n" ^ (translate_sl sl) ^ "}\n"
+ and translate_if (cond:ast_c) (sl:ast_sl) declared_vs used_vs : string * string * list * list =
+  let (err1, prog1, declared_vs1, used_vs1) = (translate_cond cond declared_vs used_vs) in 
+   let (err2, prog2, declared_vs2, used_vs2) = (translate_sl sl declared_vs1 used_vs1) in
+    err1 ^ err2, "if (" ^ prog1 ^ ") {\n" ^ prog2 ^ "}\n", declared_vs2, used_vs2
  
- and translate_while (cond:ast_c) (sl:ast_sl) : string =
-  "while (" ^ (translate_cond cond) ^ ") {\n" ^ (translate_sl sl) ^ "}\n"
+ and translate_while (cond:ast_c) (sl:ast_sl) declared_vs used_vs : string * string * list * list =
+ let (err1, prog1, declared_vs1, used_vs1) = (translate_cond cond declared_vs used_vs) in 
+  let (err2, prog2, declared_vs2, used_vs2) = (translate_sl sl declared_vs1 used_vs1) in
+   err1 ^ err2, "while (" ^ prog1 ^ ") {\n" ^ prog2 ^ "}\n", declared_vs2, used_vs2
  
- and translate_expr (expr:ast_e) : string =
+ and translate_expr (expr:ast_e) declared_vs used_vs : string * string * list * list =
   match expr with
-   | AST_id(id) -> id
+   | AST_id(id) -> if ((item_in_list id declared_vs) = false) then "Undeclared variable " ^ id ^ ";\n", id, declared_vs, id :: used_vs
    | AST_num(num) -> num
-   | AST_binop(op, lhs, rhs) -> "(" ^ (translate_expr lhs) ^ ") " ^ op ^ " (" ^ (translate_expr rhs) ^ ")"
+   | AST_binop(op, lhs, rhs) ->  let (err1, prog1, declared_vs1, used_vs1) = (translate_expr lhs declared_vs used_vs) in 
+      let (err2, prog2, declared_vs2, used_vs2) = (translate_expr rhs declared_vs1 used_vs1) in
+        err1 ^ err2, "(" ^ prog1 ^ ") " ^ op ^ " (" ^ prog2 ^ ")", declared_vs2, used_vs2
  
- and translate_cond (cond:ast_c) : string =
+ and translate_cond (cond:ast_c) declared_vs used_vs : string * string * list * list =
   let (rn, lhs, rhs) = cond in
-  (translate_expr lhs) ^ " " ^ rn ^ " " ^ (translate_expr rhs)
+    let (err1, prog1, declared_vs1, used_vs1) = (translate_expr lhs declared_vs used_vs) in 
+      let (err2, prog2, declared_vs2, used_vs2) = (translate_expr rhs declared_vs1 used_vs1) in
+        err1 ^ err2, prog1 ^ " " ^ rn ^ " " ^ prog2, declared_vs2, used_vs2
  ;;
  
  (*******************************************************************
