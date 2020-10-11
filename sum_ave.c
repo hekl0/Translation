@@ -3,17 +3,23 @@
 #include <stdlib.h>
 
 double getreal() {
-  ... // returns a real number from standard input or
-      // prints an appropriate error message and dies.
+  double x;  
+  int stt = scanf("%lf", x);
+  if (stt != 1) {
+      printf("Error getreal()");
+      exit(1);
+  }
 }
 
 void putreal(double n) {
-  ... // prints a real number and a linefeed to standard output.
+  printf("%lf", n);
 }
+
 int main() {
 a = getreal();
 b = getreal();
 sum = (a) + (b);
 putreal(sum);
 putreal((sum) / (2));
+return 0;
 }

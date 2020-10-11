@@ -601,7 +601,7 @@
  
  and ast_ize_C (c:parse_tree) : ast_c =
    match c with
-   | PT_nt ("C", [lhs; PT_nt ("rn", [PT_term "="]); rhs]) -> ("=", ast_ize_expr lhs, ast_ize_expr rhs)
+   | PT_nt ("C", [lhs; PT_nt ("rn", [PT_term "="]); rhs]) -> ("==", ast_ize_expr lhs, ast_ize_expr rhs)
    | PT_nt ("C", [lhs; PT_nt ("rn", [PT_term "<>"]); rhs]) -> ("<>", ast_ize_expr lhs, ast_ize_expr rhs)
    | PT_nt ("C", [lhs; PT_nt ("rn", [PT_term "<"]); rhs]) -> ("<", ast_ize_expr lhs, ast_ize_expr rhs)
    | PT_nt ("C", [lhs; PT_nt ("rn", [PT_term ">"]); rhs]) -> (">", ast_ize_expr lhs, ast_ize_expr rhs)
@@ -626,17 +626,22 @@
 #include <stdlib.h>
 
 double getreal() {
-  ... // returns a real number from standard input or
-      // prints an appropriate error message and dies.
+  double x;  
+  int stt = scanf(\"%lf\", x);
+  if (stt != 1) {
+      printf(\"Error getreal()\");
+      exit(1);
+  }
 }
 
 void putreal(double n) {
-  ... // prints a real number and a linefeed to standard output.
+  printf(\"%lf\", n);
 }
+
 ";;
    
  let rec translate (ast:ast_sl) : string * string = 
-  "", prologue ^ "int main() {\n" ^ (translate_sl ast) ^ "}\n"
+  "", prologue ^ "int main() {\n" ^ (translate_sl ast) ^ "return 0;\n}\n"
  
  and translate_sl (ast:ast_sl) : string =
   match ast with
