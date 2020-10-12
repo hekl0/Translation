@@ -425,33 +425,33 @@
      | _ -> raise (Failure "expected nonterminal at top of astack") in
     helper astack rhs_len [];;
  
- let sum_ave_prog = "read a read b sum := (a + b) write sum write sum / 2";;
- let primes_prog = "
-      read n
-      cp := 2
-      while n > 0
-          found := 0
-          cf1 := 2
-          cf1s := cf1 * cf1
-          while cf1s <= cp
-              cf2 := 2
-              pr := cf1 * (cf2 + cf1)
-              while pr <= cp
-                  if pr = cp
-                      found := 1
-                  end
-                  cf2 := cf2 + 1
-                  pr := cf1 * cf2
-              end
-              cf1 := cf1 + 1
-              cf1s := cf1 * cf1
-          end
-          if found = 0
-              write cp
-              n := n - 1
-          end
-          cp := cp + 1
-      end";;
+  let sum_ave_prog = "read a read b sum := a + b write sum write sum / 2";;
+  let primes_prog = "
+        read n
+        cp := 2
+        while n > 0
+            found := 0
+            cf1 := 2
+            cf1s := cf1 * cf1
+            while cf1s <= cp
+                cf2 := 2
+                pr := cf1 * cf2
+                while pr <= cp
+                    if pr = cp
+                        found := 1
+                    end
+                    cf2 := cf2 + 1
+                    pr := cf1 * cf2
+                end
+                cf1 := cf1 + 1
+                cf1s := cf1 * cf1
+            end
+            if found = 0
+                write cp
+                n := n - 1
+            end
+            cp := cp + 1
+        end";;
  
  type parse_action = PA_error | PA_prediction of string list;;
  (* Double-index to find prediction (list of RHS symbols) for
@@ -629,6 +629,10 @@
     | [] -> ""
     | h :: t -> if ((item_in_list h used_vs) = false) then "Unused variable " ^ h ^ "\n" ^ (check_unused_variable t used_vs) else (check_unused_variable t used_vs);;
 
+  let rec print_list = function 
+    [] -> print_string ";\n"
+    | e::l -> print_string e ; print_string " " ; print_list l;;
+
  (*******************************************************************
      Translator
   *******************************************************************)
@@ -646,15 +650,19 @@
 
 double getreal() {
   double x;  
-  int stt = scanf(\"%lf\", x);
-  if (stt != 1) {
+  int stt = scanf(\"%lf\", &x);
+  if (stt == -1) {
+    printf(\"Unexpected EOF\");
+    exit(1);
+  } else if (stt != 1) {
       printf(\"Error getreal()\");
       exit(1);
   }
+  return x;
 }
 
 void putreal(double n) {
-  printf(\"%lf\", n);
+  printf(\"%lf\\n\", n);
 }
 
 ";;
@@ -663,14 +671,14 @@ void putreal(double n) {
   let (err, prog, declared_vs, used_vs) = (translate_sl ast [] []) in
   err ^ (check_unused_variable declared_vs used_vs), prologue ^ "int main() {\n" ^ prog ^ "return 0;\n}\n"
  
- and translate_sl (ast:ast_sl) declared_vs used_vs : string * string * list * list =
+ and translate_sl (ast:ast_sl) declared_vs used_vs : string * string * string list * string list =
   match ast with
-   | [] -> "", "", [], []
+   | [] -> "", "", declared_vs, used_vs
    | s :: sl -> let (err1, prog1, declared_vs1, used_vs1) = (translate_s s declared_vs used_vs) in 
       let (err2, prog2, declared_vs2, used_vs2) = (translate_sl sl declared_vs1 used_vs1) in
         err1 ^ err2, prog1 ^ prog2, declared_vs2, used_vs2
  
- and translate_s (s:ast_s) declared_vs used_vs : string * string * list * list =
+ and translate_s (s:ast_s) declared_vs used_vs : string * string * string list * string list =
   match s with
    | AST_assign(id, expr) -> let (err1, prog1, declared_vs1, used_vs1) = (translate_assign id expr declared_vs used_vs) in 
       if ((item_in_list id declared_vs) = false) then err1, "double " ^ id ^ ";\n" ^ prog1, id :: declared_vs1, used_vs1 else err1, prog1, declared_vs1, used_vs1
@@ -681,36 +689,37 @@ void putreal(double n) {
    | AST_while (cond, sl) -> translate_while cond sl declared_vs used_vs
    | AST_error -> raise (Failure "How can I get this error????")
  
- and translate_assign (id:string) (expr:ast_e) declared_vs used_vs : string * string * list * list =
+ and translate_assign (id:string) (expr:ast_e) declared_vs used_vs : string * string * string list * string list =
   let (err1, prog1, declared_vs1, used_vs1) = (translate_expr expr declared_vs used_vs) in
     err1, id ^ " = " ^ prog1 ^ ";\n", declared_vs1, used_vs1
  
- and translate_read (id:string) declared_vs used_vs : string * string * list * list =
+ and translate_read (id:string) declared_vs used_vs : string * string * string list * string list =
   "", id ^ " = getreal();\n", declared_vs, used_vs
  
- and translate_write (expr:ast_e) declared_vs used_vs : string * string * list * list =
+ and translate_write (expr:ast_e) declared_vs used_vs : string * string * string list * string list =
   let (err1, prog1, declared_vs1, used_vs1) = (translate_expr expr declared_vs used_vs) in
     err1, "putreal(" ^ prog1 ^ ");\n", declared_vs1, used_vs1
  
- and translate_if (cond:ast_c) (sl:ast_sl) declared_vs used_vs : string * string * list * list =
+ and translate_if (cond:ast_c) (sl:ast_sl) declared_vs used_vs : string * string * string list * string list =
   let (err1, prog1, declared_vs1, used_vs1) = (translate_cond cond declared_vs used_vs) in 
    let (err2, prog2, declared_vs2, used_vs2) = (translate_sl sl declared_vs1 used_vs1) in
     err1 ^ err2, "if (" ^ prog1 ^ ") {\n" ^ prog2 ^ "}\n", declared_vs2, used_vs2
  
- and translate_while (cond:ast_c) (sl:ast_sl) declared_vs used_vs : string * string * list * list =
+ and translate_while (cond:ast_c) (sl:ast_sl) declared_vs used_vs : string * string * string list * string list =
  let (err1, prog1, declared_vs1, used_vs1) = (translate_cond cond declared_vs used_vs) in 
   let (err2, prog2, declared_vs2, used_vs2) = (translate_sl sl declared_vs1 used_vs1) in
    err1 ^ err2, "while (" ^ prog1 ^ ") {\n" ^ prog2 ^ "}\n", declared_vs2, used_vs2
  
- and translate_expr (expr:ast_e) declared_vs used_vs : string * string * list * list =
+ and translate_expr (expr:ast_e) declared_vs used_vs : string * string * string list * string list =
   match expr with
-   | AST_id(id) -> if ((item_in_list id declared_vs) = false) then "Undeclared variable " ^ id ^ ";\n", id, declared_vs, id :: used_vs
-   | AST_num(num) -> num
+   | AST_id(id) -> if ((item_in_list id declared_vs) = false) then "Undeclared variable " ^ id ^ ";\n", id, declared_vs, id :: used_vs else "", id, declared_vs, id :: used_vs
+   | AST_num(num) -> "", num, declared_vs, used_vs
    | AST_binop(op, lhs, rhs) ->  let (err1, prog1, declared_vs1, used_vs1) = (translate_expr lhs declared_vs used_vs) in 
       let (err2, prog2, declared_vs2, used_vs2) = (translate_expr rhs declared_vs1 used_vs1) in
-        err1 ^ err2, "(" ^ prog1 ^ ") " ^ op ^ " (" ^ prog2 ^ ")", declared_vs2, used_vs2
+        if (op = "/" && prog2 = "0") then err1 ^ err2 ^ "Divide by 0;\n", "(" ^ prog1 ^ ") " ^ op ^ " (" ^ prog2 ^ ")", declared_vs2, used_vs2
+        else err1 ^ err2, "(" ^ prog1 ^ ") " ^ op ^ " (" ^ prog2 ^ ")", declared_vs2, used_vs2
  
- and translate_cond (cond:ast_c) declared_vs used_vs : string * string * list * list =
+ and translate_cond (cond:ast_c) declared_vs used_vs : string * string * string list * string list =
   let (rn, lhs, rhs) = cond in
     let (err1, prog1, declared_vs1, used_vs1) = (translate_expr lhs declared_vs used_vs) in 
       let (err2, prog2, declared_vs2, used_vs2) = (translate_expr rhs declared_vs1 used_vs1) in
@@ -735,7 +744,7 @@ void putreal(double n) {
      let ofile = open_out ofile_name in
        output_string ofile output;
        close_out ofile;
-       errs ^ "Code written to " ^ ofile_name ^ "\n"
+       errs ^ "Code written to " ^ ofile_name ^ "\n\n"
    with Failure(msg) -> msg ^ "No code generated for " ^ program_name ^ "\n";;
  
  let main () =
